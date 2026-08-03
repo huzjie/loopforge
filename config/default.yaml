@@ -1,0 +1,185 @@
+# ============================================================================
+# LoopForge 默认配置（配置层级第 2 层）
+#
+# 【冻结约定 · TASK_BREAKDOWN §12.5 / §13.4】
+#   本文件的顶层节由 WP1 一次性写全并冻结。各 WP 只能修改自己节下的默认值，
+#   **不得新增顶层节**；节内新增子键需在 PR 描述里显式列出。
+#
+#   八个必备节：providers / executor / memory / governance / orchestration /
+#               api / worker / observability
+#   另含基础设施节：app / db / security / roles / lease / dispatcher /
+#                   recovery / verification / vcs
+# ============================================================================
+
+app:
+  name: loopforge
+  env: development            # development | production
+  timezone: UTC
+  version: "0.1.0"
+  data_dir: ./data
+
+db:
+  url: sqlite+aiosqlite:///./data/loopforge.db
+  pool_size: 10
+  max_overflow: 20
+  pool_recycle_s: 1800
+  pool_pre_ping: true
+  echo: false
+  statement_timeout_s: 30
+  sqlite_busy_timeout_ms: 5000
+  sqlite_journal_mode: WAL
+
+api:
+  host: 0.0.0.0
+  port: 8080
+  root_path: ""
+  cors_origins: ["http://localhost:5173"]
+  rate_limit_per_minute: 600
+  max_page_size: 200
+  default_page_size: 50
+  request_timeout_s: 60
+  docs_enabled: true
+  ws:
+    heartbeat_interval_s: 20
+    max_backfill: 5000
+    send_queue_size: 1000
+
+security:
+  encryption_key_env: LOOPFORGE__SECURITY__ENCRYPTION_KEY
+  encryption_key: ""
+  api_key_prefix: lf
+  default_admin_key_env: LOOPFORGE__SECURITY__BOOTSTRAP_KEY
+  bootstrap_key: ""
+  api_key_ttl_days: 365
+  password_min_length: 12
+
+providers:
+  default: mock
+  failover_chain: [mock]
+  request_timeout_s: 120
+  max_retries: 4
+  backoff_base_s: 1.0
+  backoff_max_s: 30.0
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout_s: 60
+    half_open_max_calls: 2
+  pricing_file: config/pricing.yaml
+  stream_enabled: true
+
+roles:
+  planner:    { provider: mock, model: mock-large, temperature: 0.2, max_tokens: 4096 }
+  coder:      { provider: mock, model: mock-large, temperature: 0.1, max_tokens: 8192 }
+  reviewer:   { provider: mock, model: mock-large, temperature: 0.0, max_tokens: 4096 }
+  tester:     { provider: mock, model: mock-large, temperature: 0.1, max_tokens: 4096 }
+  summarizer: { provider: mock, model: mock-small, temperature: 0.0, max_tokens: 2048 }
+
+executor:
+  kind: local_subprocess       # local_subprocess | docker
+  workspace_root: ./data/workspaces
+  command_timeout_s: 300
+  max_output_bytes: 1048576
+  max_memory_mb: 2048
+  env_allowlist: [PATH, HOME, LANG, PYTHONPATH, TMPDIR, SystemRoot, TEMP, COMSPEC]
+  cleanup_on_success: true
+  docker:
+    image: python:3.11-slim
+    network: none
+    cpu_quota: 2.0
+    memory_limit: 2g
+    reuse_container: true
+
+memory:
+  max_context_tokens: 128000
+  usage_ratio: 0.60
+  reserve_output_tokens: 8192
+  layer_ratios: { pinned: 0.08, working: 0.40, episodic: 0.22, semantic: 0.20, milestone: 0.10 }
+  compress_every_n_loops: 25
+  fidelity_check_interval: 20
+  pinned_max_ratio: 0.08
+  pinned_max_items: 50
+  retrieval:
+    default: bm25
+    bm25: { k1: 1.5, b: 0.75, top_k: 40 }
+    embedding: { enabled: false, model: text-embedding-3-small, top_k: 20, fusion: rrf }
+
+orchestration:
+  max_loops: 500
+  loop_timeout_s: 1800
+  checkpoint_every_step: true
+  checkpoint_every_loop: true
+  no_progress_threshold: 5
+  action_loop_window: 8
+  event_bus_queue_size: 10000
+  event_bus_overflow_policy: drop_oldest   # drop_oldest | drop_newest | block
+
+lease:
+  base_ttl_s: 90
+  heartbeat_interval_s: 20
+  max_ttl_s: 1800
+  grace_period_s: 30
+  max_extends: 40
+  max_reclaims: 5
+
+dispatcher:
+  strategy: dependency_aware   # fifo | priority | dependency_aware
+  batch_size: 20
+  max_concurrent_tasks_per_run: 4
+  starvation_threshold: 20
+
+recovery:
+  on_uncertain: replan         # replan | ask_human | fail
+  max_recoveries_per_run: 20
+  reconcile_probe_timeout_s: 30
+
+governance:
+  policy_file: config/policies/default.yaml
+  approval_timeout_s: 3600
+  approval_timeout_action: fail   # fail | deny | allow
+  audit_chain_enabled: true
+  budget:
+    default_run_limit_usd: 5.0
+    default_day_limit_usd: 50.0
+    warn_at: 0.7
+    throttle_at: 0.9
+    halt_at: 1.0
+    throttle_sleep_s: 30
+
+verification:
+  enabled_steps: [build, unit, e2e, lifecycle]
+  build_timeout_s: 600
+  unit_timeout_s: 900
+  e2e_timeout_s: 1200
+  lifecycle_timeout_s: 300
+  fail_fast: false
+
+vcs:
+  provider: local_sandbox      # local_sandbox | github
+  branch_prefix: loopforge/
+  protected_branches: [main, master, release/*]
+  commit_trailer_prefix: LoopForge
+  github:
+    api_base: https://api.github.com
+    token_env: LOOPFORGE__VCS__GITHUB__TOKEN
+    token: ""
+    auto_label: "loopforge:auto"
+    webhook_secret_env: LOOPFORGE__VCS__GITHUB__WEBHOOK_SECRET
+    webhook_secret: ""
+
+worker:
+  id: ""                       # 留空则启动时生成 ULID
+  concurrency: 2
+  poll_interval_s: 2.0
+  capabilities: [python, git]
+  drain_timeout_s: 120
+  watchdog_interval_s: 10
+
+observability:
+  log_format: json             # json | console
+  log_level: INFO
+  metrics_enabled: true
+  metrics_port: 9090
+  alerts_file: config/alerts.yaml
+  channels: []                 # [{kind: webhook, url: ...}, {kind: feishu, ...}]
+  redaction_enabled: true
+  trace_header: X-Trace-Id

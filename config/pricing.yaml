@@ -1,0 +1,227 @@
+# LoopForge 模型价目表
+#
+# 单位：每 100 万 tokens 的价格（per M tokens）。
+# currency 缺省为 USD；写 CNY 时由 providers/pricing.py 按 fx 表折算成 USD。
+#
+# 字段说明
+#   input          输入（未命中缓存部分）单价
+#   output         输出单价
+#   cached_input   命中前缀缓存的输入单价，缺省视为 input
+#   context        上下文窗口（tokens）
+#   max_output     单次输出上限（tokens）
+#
+# 匹配顺序（providers/pricing.py::price_of）
+#   1. provider + 精确模型名
+#   2. provider + 最长前缀匹配（覆盖 qwen3.8-max-2026-08-01 这类带日期后缀的快照名）
+#   3. provider 下的 "*" 通配
+#   4. 抛 ModelNotPricedError
+#
+# 免责声明：价格随厂商调整而变动，本文件只是缺省值。
+# 生产部署请通过 providers.pricing_file 指向自己维护的副本。
+
+version: 1
+updated_at: "2026-08-03"
+
+# 外汇折算表：1 USD = ? 该币种。仅用于把 CNY 价目折成 USD 记账。
+fx:
+  USD: 1.0
+  CNY: 7.20
+
+providers:
+
+  # ---------------------------------------------------------------- Mock
+  # 合成价格，专供零 Key 端到端演练：数量级刻意贴近真实中端模型，
+  # 这样预算三级动作（warn / throttle / halt）在 mock 模式下也能被真实触发。
+  mock:
+    mock-large:
+      input: 0.50
+      output: 1.50
+      cached_input: 0.05
+      context: 131072
+      max_output: 16384
+    mock-small:
+      input: 0.10
+      output: 0.30
+      cached_input: 0.01
+      context: 32768
+      max_output: 4096
+    "*":
+      input: 0.50
+      output: 1.50
+      cached_input: 0.05
+      context: 131072
+      max_output: 16384
+
+  # ---------------------------------------------------------------- DashScope（阿里云百炼 / 通义千问）
+  # qwen3.8 系列为国内站人民币价：输入 12 元/百万、输出 36 元/百万、缓存命中 1.5 元/百万。
+  dashscope:
+    qwen3.8-max:
+      currency: CNY
+      input: 12.0
+      output: 36.0
+      cached_input: 1.5
+      context: 262144
+      max_output: 65536
+      note: "Loop Engineering 范式的锚点模型（2026-08-03 发布）"
+    qwen3.8-27b:
+      currency: CNY
+      input: 2.0
+      output: 6.0
+      cached_input: 0.25
+      context: 262144
+      max_output: 32768
+      note: "同代小尺寸稠密模型，适合 reviewer / summarizer 角色"
+    qwen3-coder-plus:
+      currency: CNY
+      input: 4.0
+      output: 16.0
+      cached_input: 0.8
+      context: 1000000
+      max_output: 65536
+    qwen-max:
+      currency: CNY
+      input: 2.4
+      output: 9.6
+      cached_input: 0.48
+      context: 32768
+      max_output: 8192
+    qwen-plus:
+      currency: CNY
+      input: 0.8
+      output: 2.0
+      cached_input: 0.16
+      context: 131072
+      max_output: 8192
+    qwen-turbo:
+      currency: CNY
+      input: 0.3
+      output: 0.6
+      cached_input: 0.06
+      context: 1000000
+      max_output: 8192
+    text-embedding-v3:
+      currency: CNY
+      input: 0.5
+      output: 0.0
+      context: 8192
+      max_output: 1
+    "*":
+      currency: CNY
+      input: 12.0
+      output: 36.0
+      cached_input: 1.5
+      context: 131072
+      max_output: 8192
+
+  # ---------------------------------------------------------------- OpenAI 及兼容网关
+  openai:
+    gpt-4o:
+      input: 2.50
+      output: 10.00
+      cached_input: 1.25
+      context: 128000
+      max_output: 16384
+    gpt-4o-mini:
+      input: 0.15
+      output: 0.60
+      cached_input: 0.075
+      context: 128000
+      max_output: 16384
+    gpt-4.1:
+      input: 2.00
+      output: 8.00
+      cached_input: 0.50
+      context: 1047576
+      max_output: 32768
+    gpt-4.1-mini:
+      input: 0.40
+      output: 1.60
+      cached_input: 0.10
+      context: 1047576
+      max_output: 32768
+    o3:
+      input: 2.00
+      output: 8.00
+      cached_input: 0.50
+      context: 200000
+      max_output: 100000
+    o4-mini:
+      input: 1.10
+      output: 4.40
+      cached_input: 0.275
+      context: 200000
+      max_output: 100000
+    text-embedding-3-small:
+      input: 0.02
+      output: 0.0
+      context: 8191
+      max_output: 1
+    text-embedding-3-large:
+      input: 0.13
+      output: 0.0
+      context: 8191
+      max_output: 1
+    "*":
+      input: 2.50
+      output: 10.00
+      cached_input: 1.25
+      context: 128000
+      max_output: 16384
+
+  # ---------------------------------------------------------------- Anthropic
+  anthropic:
+    claude-sonnet-4-5:
+      input: 3.00
+      output: 15.00
+      cached_input: 0.30
+      context: 200000
+      max_output: 64000
+    claude-opus-4-1:
+      input: 15.00
+      output: 75.00
+      cached_input: 1.50
+      context: 200000
+      max_output: 32000
+    claude-haiku-4-5:
+      input: 1.00
+      output: 5.00
+      cached_input: 0.10
+      context: 200000
+      max_output: 64000
+    "*":
+      input: 3.00
+      output: 15.00
+      cached_input: 0.30
+      context: 200000
+      max_output: 64000
+
+  # ---------------------------------------------------------------- DeepSeek
+  deepseek:
+    deepseek-chat:
+      input: 0.27
+      output: 1.10
+      cached_input: 0.07
+      context: 131072
+      max_output: 8192
+    deepseek-reasoner:
+      input: 0.55
+      output: 2.19
+      cached_input: 0.14
+      context: 131072
+      max_output: 65536
+    "*":
+      input: 0.27
+      output: 1.10
+      cached_input: 0.07
+      context: 131072
+      max_output: 8192
+
+  # ---------------------------------------------------------------- Ollama（本地推理，零成本）
+  ollama:
+    "*":
+      input: 0.0
+      output: 0.0
+      cached_input: 0.0
+      context: 131072
+      max_output: 8192
+      note: "本地 GPU/CPU 推理不计入 USD 预算，但仍记录 token 用量"

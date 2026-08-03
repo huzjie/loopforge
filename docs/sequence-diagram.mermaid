@@ -1,0 +1,401 @@
+%% LoopForge 关键流程时序图
+%% 源文件：docs/ARCHITECTURE.md —— 本文件为自动抽取，请勿手工编辑，改动请回到 ARCHITECTURE.md
+
+%% ===== §8.1.6 幂等重放判定 =====
+sequenceDiagram
+    autonumber
+    participant W as AgentRuntime
+    participant IG as IdempotencyGuard
+    participant DB as Database
+    participant T as BaseTool
+    participant EXT as 外部世界<br/>git / GitHub / FS
+    participant RC as RecoveryCoordinator
+
+    rect rgb(232, 245, 233)
+    Note over W,EXT: 正常路径
+    W->>IG: compute_key(run,task,loop,phase,tool,args)
+    IG-->>W: idempotency_key
+    W->>IG: begin_intent(StepIntent)
+    IG->>DB: INSERT steps(state=INTENT_RECORDED, key, side_effect_class)
+    DB-->>IG: OK  (唯一索引冲突则返回已有 Step)
+    IG-->>W: IntentTicket
+    W->>T: execute(ctx, args)
+    T->>EXT: 产生副作用（commit / push / PR / 写文件）
+    EXT-->>T: external_ref
+    T-->>W: ToolResult(external_ref)
+    W->>IG: confirm(ticket, result)
+    IG->>DB: UPDATE steps SET state=CONFIRMED, result, external_ref<br/>+ INSERT idempotency_records + INSERT events (同一事务)
+    end
+
+    rect rgb(255, 235, 238)
+    Note over W,EXT: 崩溃发生在 execute 与 confirm 之间
+    W--xW: kill -9
+    end
+
+    rect rgb(227, 242, 253)
+    Note over RC,EXT: 重启后的对账
+    RC->>DB: SELECT * FROM steps WHERE state='INTENT_RECORDED' AND run_id=?
+    DB-->>RC: [step_1(PROBEABLE), step_2(UNSAFE), step_3(IDEMPOTENT)]
+
+    RC->>T: probe(ctx, step_1.intent)
+    T->>EXT: git log --grep="LoopForge-Step-Key: k1"
+    EXT-->>T: sha=abc123
+    T-->>RC: ProbeResult(executed=true, external_ref=abc123, confidence=high)
+    RC->>DB: UPDATE step_1 SET state=CONFIRMED, external_ref=abc123
+    RC->>DB: INSERT events(STEP_RECONCILED, resolution=already_executed)
+
+    RC->>T: probe(ctx, step_3.intent)
+    T->>EXT: sha256(target_file)
+    EXT-->>T: hash 不匹配
+    T-->>RC: ProbeResult(executed=false)
+    RC->>W: 重放 step_3
+
+    RC->>DB: UPDATE step_2 SET state=UNCERTAIN
+    alt on_uncertain = replan (默认)
+        RC->>DB: INSERT memory_items(层=episodic,<br/>"步骤 X 意图为 <...>，崩溃后结果未知，工作区现状为 <...>")
+        RC->>DB: INSERT events(STEP_UNCERTAIN, resolution=replan)
+        Note over RC: 让 LLM 基于真实现状重新规划
+    else on_uncertain = ask_human
+        RC->>DB: INSERT approvals(action_kind=reconcile_uncertain)
+        RC->>DB: UPDATE runs SET state=AWAITING_APPROVAL
+    end
+    RC->>DB: UPDATE runs SET state=RUNNING, recovery_count=recovery_count+1
+    end
+
+%% ===== §8.2.5 上下文压缩触发 =====
+sequenceDiagram
+    autonumber
+    participant P as PlanPhase
+    participant CM as ContextManager
+    participant BA as BudgetAllocator
+    participant L0 as PinnedStore
+    participant RT as Bm25Retriever
+    participant CP as Compressor
+    participant SM as SummarizerRole
+    participant DB as Database
+
+    P->>CM: build_context(run, task, role=coder, token_budget=T)
+    CM->>BA: allocate(T, layer_ratios)
+    BA-->>CM: LayerBudget{L0:0.08T, L1:0.40T, L2:0.22T, L3:0.20T, L4:0.10T}
+
+    CM->>L0: list_active(run_id)
+    L0-->>CM: constraints[]  (强制全量注入，不参与裁剪)
+    alt constraints_tokens > 0.08T
+        CM->>DB: INSERT events(PINNED_QUOTA_EXCEEDED, severity=WARNING)
+        Note over CM: 按 priority 截断最低优先级并告警，绝不静默丢弃
+    end
+
+    CM->>DB: load working memory (当前轮消息)
+    CM->>RT: search(query=task.title + 最近错误, top_k=40, layers=[L2,L3])
+    RT-->>CM: RetrievedDoc[]
+    CM->>DB: load milestone summaries (level desc)
+
+    CM->>CM: 计算总 tokens
+    alt 超出预算
+        CM->>CP: compress(level=1, over_budget_layers)
+        CP-->>CM: 结构化裁剪结果 (确定性)
+        alt 仍超预算
+            CM->>CP: compress(level=2)
+            CP-->>CM: 抽取式摘要结果 (确定性)
+            alt 仍超预算
+                CM->>SM: summarize(items, target_tokens)
+                SM-->>CM: MilestoneSummary(content, level=N)
+                CM->>DB: INSERT milestone_summaries
+                CM->>DB: UPDATE memory_items SET compressed_into=<summary_id>
+                CM->>DB: INSERT memory_lineage(summary_id, source_item_id, info_loss_score)
+                CM->>DB: INSERT events(MEMORY_COMPRESSED, level=3, saved_tokens=X)
+            end
+        end
+    end
+
+    opt loop_index % fidelity_check_interval == 0
+        CM->>SM: check_fidelity(constraints[], current_plan)
+        SM-->>CM: FidelityReport(violations[])
+        alt 存在违背
+            CM->>DB: INSERT events(CONSTRAINT_VIOLATION, severity=ERROR)
+            CM->>CM: 把被违背的约束重新置顶注入 L1
+            CM->>L0: increment hit_count
+        end
+    end
+
+    CM-->>P: ContextPack{messages, layer_tokens, dropped_items[]}
+
+%% ===== §8.3.6 租约获取与 Watchdog 回收 =====
+sequenceDiagram
+    autonumber
+    participant W1 as Worker-1
+    participant W2 as Worker-2
+    participant D as Dispatcher
+    participant LM as LeaseManager
+    participant DB as Database
+    participant WD as Watchdog
+    participant EB as EventBus
+
+    rect rgb(232, 245, 233)
+    Note over W1,DB: 阶段 1 —— 10 Worker 并发争抢，零重复领取
+    par 并发
+        W1->>D: request_task(capabilities)
+        D->>DB: SELECT leasable candidates (state=READY, deps ok) LIMIT 20
+        DB-->>D: [T-A(v=3), T-B(v=1), ...]
+        D->>LM: acquire(task=T-A, worker=W1, expected_version=3, ttl=90)
+        LM->>DB: UPDATE tasks SET state='LEASED', fence_token=1001, version=4<br/>WHERE id='T-A' AND state='READY' AND version=3
+        DB-->>LM: rowcount=1 ✅
+        LM->>DB: INSERT leases(task=T-A, worker=W1, fence_token=1001, state='ACTIVE')
+        LM-->>D: Lease(fence_token=1001)
+        D-->>W1: assign(T-A, lease)
+    and
+        W2->>D: request_task(capabilities)
+        D->>DB: SELECT leasable candidates
+        DB-->>D: [T-A(v=3), T-B(v=1), ...]   (读到了同样的脏候选)
+        D->>LM: acquire(task=T-A, worker=W2, expected_version=3, ttl=90)
+        LM->>DB: UPDATE tasks ... WHERE id='T-A' AND state='READY' AND version=3
+        DB-->>LM: rowcount=0 ❌ (version 已变为 4)
+        LM-->>D: None
+        D->>LM: acquire(task=T-B, worker=W2, expected_version=1, ttl=90)
+        LM->>DB: UPDATE tasks ... rowcount=1 ✅ fence_token=1002
+        LM-->>D: Lease(fence_token=1002)
+        D-->>W2: assign(T-B, lease)
+    end
+    Note over W1,W2: 无锁、无 Redis、SQLite 可跑，重复领取率 0%
+    end
+
+    rect rgb(255, 253, 231)
+    Note over W1,WD: 阶段 2 —— 心跳与自适应续期
+    loop 每 20s
+        W1->>LM: heartbeat(lease_id, fence_token=1001, progress_hint="editing calc/core.py")
+        LM->>DB: UPDATE leases SET expires_at=now+90, heartbeat_count+1<br/>WHERE id=? AND state='ACTIVE' AND fence_token=1001
+        DB-->>LM: rowcount=1
+        LM-->>W1: ok
+    end
+    W1->>LM: extend(lease_id, fence_token=1001, extra_s=600, reason="running_test_suite")
+    LM->>DB: UPDATE leases SET expires_at=now+600, extend_count+1
+    LM->>EB: emit(LEASE_EXTENDED)
+    end
+
+    rect rgb(255, 235, 238)
+    Note over W1,EB: 阶段 3 —— Worker 假死，Watchdog 回收（不误杀 + 不失联）
+    W1--xW1: 进程假死 / 网络分区
+    loop 每 10s
+        WD->>DB: SELECT * FROM leases<br/>WHERE state='ACTIVE' AND expires_at < now - grace(30s)
+        DB-->>WD: [lease(T-A, W1, fence=1001)]
+        WD->>DB: 二次证据：workers.last_heartbeat_at(W1) < now - 30s ?
+        DB-->>WD: yes（Worker 级心跳也丢失）
+        WD->>DB: UPDATE leases SET state='EXPIRED', expiry_reason='HEARTBEAT_TIMEOUT'
+        WD->>DB: UPDATE tasks SET state='READY', current_lease_id=NULL,<br/>fence_token=fence_token+1 (→1003), reclaim_count=reclaim_count+1, version=version+1<br/>WHERE id='T-A'
+        WD->>EB: emit(LEASE_RECLAIMED, reason=HEARTBEAT_TIMEOUT, reclaim_count=1)
+        Note over WD: Task 回到 READY，attempt_count 不变<br/>租约超时 ≠ 任务失败
+    end
+    end
+
+    rect rgb(227, 242, 253)
+    Note over W1,DB: 阶段 4 —— 慢 Worker 复活，被 Fencing 挡住（关键！）
+    W1->>LM: heartbeat(lease_id, fence_token=1001)
+    LM->>DB: UPDATE leases ... WHERE state='ACTIVE' AND fence_token=1001
+    DB-->>LM: rowcount=0
+    LM-->>W1: raise LeaseLostError(LF-LEASE-0002)
+    W1->>W1: 立即中止一切副作用（不再 commit / push / 写文件）
+    W1->>EB: emit(WORKER_FENCED_OUT, lease_id, old_fence=1001, task=T-A)
+    W1->>D: request_task()  (重新领新任务，不影响吞吐)
+    Note over W1,DB: 即使 W1 抢在回收前正在写库，<br/>fence_token=1001 <= tasks.fence_token=1003 校验也会失败
+    end
+
+%% ===== §9.1 完整 Loop 循环：plan → act → observe → verify → commit =====
+sequenceDiagram
+    autonumber
+    participant D as Dispatcher
+    participant AR as AgentRuntime
+    participant LE as LoopEngine
+    participant CM as ContextManager
+    participant RR as RoleRouter
+    participant BG as BudgetGuard
+    participant PR as ProviderRouter
+    participant PE as PolicyEngine
+    participant IG as IdempotencyGuard
+    participant EX as Executor
+    participant VP as VerificationPipeline
+    participant VCS as VcsProvider
+    participant EB as EventBus + DB
+
+    Note over D,EB: ===== 阶段 0：领取与接管 =====
+    D->>AR: assign(task, lease{fence_token})
+    AR->>EB: emit(TASK_LEASED)
+    AR->>EB: Task LEASED → ACTIVE (带 fence 校验)
+    AR->>AR: 启动 HeartbeatLoop (20s)
+    AR->>LE: run(task, lease)
+
+    loop 每一轮 Loop（loop_index++，上限 max_loops）
+        Note over LE,EB: ===== 阶段 1：PLAN =====
+        LE->>CM: build_context(run, task, role, token_budget)
+        CM-->>LE: ContextPack (L0 约束强制注入 + 四层召回 + 压缩)
+        LE->>RR: select_role(phase=PLAN, task_kind, last_output)
+        RR-->>LE: PlannerRole 或 CoderRole
+        LE->>BG: precheck(estimated_tokens, model)
+        alt 触及 halt 阈值
+            BG-->>LE: HALT
+            LE->>EB: emit(BUDGET_HALTED, scope, consumed, limit)
+            LE->>EB: Run → BUDGET_HALTED
+            LE-->>AR: 挂起返回
+        else warn / throttle
+            BG-->>LE: WARN 或 THROTTLE(sleep_s)
+            LE->>EB: emit(BUDGET_WARNING)
+        end
+        LE->>PR: resolve(role) → ProviderBinding
+        PR-->>LE: (provider, model)
+        LE->>IG: begin_intent(phase=PLAN, tool=llm_chat)
+        LE->>PR: chat(messages, tools)
+        alt Provider 5xx / 超时
+            PR->>PR: FailoverChain 切换备用 Provider
+            PR->>EB: emit(PROVIDER_FAILOVER, from, to, reason)
+        end
+        PR-->>LE: ChatResult(content, tool_calls, usage)
+        LE->>EB: emit(LLM_CALL) + INSERT llm_calls
+        LE->>BG: record(actual_usage) → INSERT cost_records
+        LE->>IG: confirm(ticket, result)
+
+        Note over LE,EB: ===== 阶段 2：ACT =====
+        loop 每个 tool_call
+            LE->>PE: evaluate(PolicyAction)
+            alt DENY
+                PE-->>LE: DENY(rule_id, reason)
+                LE->>EB: emit(POLICY_DENIED)
+                Note over LE: 把拒绝原因作为 tool 结果回灌给 LLM，继续本轮
+            else REQUIRE_APPROVAL
+                PE-->>LE: REQUIRE_APPROVAL
+                LE->>EB: emit(APPROVAL_REQUESTED) + INSERT approvals
+                LE->>EB: Run → AWAITING_APPROVAL
+                Note over LE: Worker 释放 CPU，轮询/事件等待裁决
+                LE->>EB: 批准 → Run → RUNNING；拒绝 → 视为 DENY
+            else ALLOW
+                PE-->>LE: ALLOW
+            end
+            LE->>IG: begin_intent(tool_name, args) → Step(INTENT_RECORDED)
+            LE->>EX: 通过 BaseTool.execute 走 Executor
+            EX-->>LE: ToolResult(external_ref)
+            LE->>IG: confirm(ticket, result)
+            LE->>EB: emit(TOOL_CALL) + INSERT tool_calls
+        end
+
+        Note over LE,EB: ===== 阶段 3：OBSERVE =====
+        LE->>CM: append_observation(结果摘要, layer=EPISODIC)
+        LE->>CM: maybe_compress(reason="post_observe")
+        LE->>LE: ProgressDetector.check(动作指纹, 文件净变更)
+        alt 无进展 / 动作循环
+            LE->>EB: emit(NO_PROGRESS_DETECTED / ACTION_LOOP_DETECTED)
+            LE->>RR: 强制切换角色（Coder→Reviewer）或降级策略
+        end
+
+        Note over LE,EB: ===== 阶段 4：VERIFY =====
+        opt 本轮有代码变更
+            LE->>VP: run(workspace)
+            VP->>EX: Build
+            VP->>EX: Unit Test
+            VP->>EX: E2E Test
+            VP->>EX: Lifecycle Check
+            VP-->>LE: VerifyReport(四项明细 + 失败归因)
+            LE->>EB: emit(VERIFY_RESULT)
+            alt 任一失败
+                LE->>EB: emit(VERIFY_FAILED, category)
+                LE->>EB: failure_router 生成修复子任务 / 本轮继续修
+                Note over LE: attempt_count += 1，回到阶段 1
+            end
+        end
+
+        Note over LE,EB: ===== 阶段 5：COMMIT =====
+        opt 验证全绿且达成提交条件
+            LE->>PE: evaluate(git_push / create_pr)
+            PE-->>LE: ALLOW (受分支保护策略约束)
+            LE->>IG: begin_intent(tool=git_commit) → key
+            LE->>VCS: commit(message + LoopForge-Step-Key trailer)
+            VCS-->>LE: CommitRef(sha)
+            LE->>IG: confirm(external_ref=sha)
+            LE->>VCS: push(branch)
+            LE->>VCS: create_pr(body 含自测报告 + 轨迹链接 + lf-step-key 注释)
+            VCS-->>LE: PullRequestRef(url, number)
+            LE->>EB: emit(COMMIT_CREATED) + emit(PR_CREATED)
+            LE->>EB: Task ACTIVE → IN_REVIEW
+        end
+
+        Note over LE,EB: ===== 阶段 6：EVOLVE =====
+        LE->>CM: 沉淀经验到 L3 语义记忆
+        LE->>EB: emit(EVOLUTION_ITEM_CREATED)（若有失败归因）
+        LE->>EB: Checkpoint(kind=loop) 写入
+        alt 里程碑达成
+            LE->>CM: 触发 L3 递归摘要
+            LE->>EB: emit(MILESTONE_REACHED)
+        end
+    end
+
+    LE-->>AR: LoopResult
+    AR->>EB: 释放租约(release) + Worker → idle
+    AR->>D: request_task()
+
+%% ===== §9.2 崩溃恢复冷启动 =====
+sequenceDiagram
+    autonumber
+    participant OP as 运维/容器编排
+    participant SUP as SupervisorProcess
+    participant CFG as ConfigLoader
+    participant DB as Database
+    participant WD as Watchdog
+    participant RC as RecoveryCoordinator
+    participant IG as IdempotencyGuard
+    participant PR as ProbeRegistry
+    participant DP as Dispatcher
+    participant EB as EventBus
+
+    OP->>SUP: start (进程被重新拉起)
+    SUP->>CFG: load()  # 七层覆盖，校验必填项
+    CFG-->>SUP: Settings
+    SUP->>DB: connect + ping
+    SUP->>DB: alembic current == head ?
+    alt 迁移版本落后
+        DB-->>SUP: revision mismatch
+        SUP-->>OP: 退出并报 LF-DB-0201（拒绝带病启动）
+    else 版本一致
+        DB-->>SUP: ok
+    end
+
+    Note over SUP,WD: 阶段一 —— 回收孤儿租约
+    SUP->>WD: reclaim_expired(grace_s=cfg.lease.grace_s, limit=100)
+    WD->>DB: UPDATE leases SET state='EXPIRED'<br/>WHERE expires_at < now()-grace AND state='ACTIVE'
+    WD->>DB: UPDATE tasks SET state='READY', lease_id=NULL,<br/>reclaim_count=reclaim_count+1, version=version+1
+    Note right of WD: reclaim_count 独立于 attempt_count<br/>回收不算任务失败（§8.3.4）
+    WD-->>SUP: list[ReclaimResult]
+    SUP->>EB: emit(LEASE_RECLAIMED) × N
+
+    Note over SUP,RC: 阶段二 —— Run 级对账
+    SUP->>DB: SELECT * FROM runs WHERE state IN ('RUNNING','RECOVERING')
+    DB-->>SUP: [run_1..run_k]
+    loop 每个未终结 Run
+        SUP->>RC: reconcile(run_id)
+        RC->>DB: Run.state = 'RECONCILING'
+        RC->>IG: find_dangling_intents(run_id)
+        IG->>DB: SELECT * FROM steps WHERE state='INTENT_RECORDED'
+        IG-->>RC: [step_a, step_b]  # 「记了意图但没确认」的悬挂步
+        loop 每个悬挂 Step
+            alt side_effect = PURE / IDEMPOTENT
+                RC->>RC: 直接重放（安全）
+            else side_effect = PROBEABLE
+                RC->>PR: probe(step.tool_name, step.args)
+                PR-->>RC: ProbeResult(executed=True/False, evidence)
+                alt executed=True
+                    RC->>DB: step.state='CONFIRMED'（补记结果，不重放）
+                else executed=False
+                    RC->>RC: 重放
+                end
+            else side_effect = UNSAFE
+                RC->>DB: step.state='ABANDONED'
+                RC->>RC: 标记该 Task 需 replan（让 LLM 基于真实现状重规划）
+            end
+        end
+        RC->>DB: 回滚未提交的 workspace（git reset --hard 到 last checkpoint）
+        RC->>DB: Run.state='RUNNING', recovery_count += 1
+        RC->>EB: emit(RUN_RECOVERED, {run_id, dangling, replayed, probed, abandoned})
+        RC-->>SUP: ReconcileReport
+    end
+
+    Note over SUP,DP: 阶段三 —— 恢复派发
+    SUP->>DP: start()
+    DP->>DB: 拉取 READY Task 并竞争租约
+    DP-->>SUP: 正常循环恢复
+    SUP->>EB: emit(SUPERVISOR_READY, {recovered_runs: k, elapsed_ms})

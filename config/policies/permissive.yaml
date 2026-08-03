@@ -1,0 +1,88 @@
+# ============================================================================
+# LoopForge 宽松安全策略 —— 面向内部实验 / 低风险沙箱
+#
+# 与 default 的区别：危险命令仍拒绝，但破坏性较小的命令改走审批；
+# 网络允许更广（仍禁私网与外传站）；工具类动作默认放行。
+# ============================================================================
+name: permissive
+version: 1
+description: 宽松安全基线 —— 实验性沙箱，危险命令仍拒绝
+
+rules:
+  # ------------------------------------------------------------------ shell
+  - rule_id: P-SHELL-001
+    category: shell
+    match: {}
+    effect: DENY
+    order: 10
+    reason: 绝对危险命令（删除根目录/格式化/提权/反弹 shell）一律拒绝
+    severity: CRITICAL
+
+  - rule_id: P-SHELL-002
+    category: shell
+    match: { pattern: "\\$\\(|`" }
+    effect: REQUIRE_APPROVAL
+    order: 11
+    reason: 命令替换需审批
+    severity: WARNING
+
+  # ------------------------------------------------------------------ path
+  - rule_id: P-PATH-001
+    category: path
+    match: { deny: ["/etc/passwd", "/etc/shadow", "/dev/sda*", "/dev/mem"] }
+    effect: DENY
+    order: 20
+    reason: 核心敏感文件仍拒绝
+    severity: CRITICAL
+
+  # ---------------------------------------------------------------- network
+  - rule_id: P-NET-001
+    category: network
+    match: { deny_domains: ["pastebin.com", "transfer.sh", "0x0.st"] }
+    effect: DENY
+    order: 30
+    reason: 仅禁止数据外传站
+    severity: CRITICAL
+
+  - rule_id: P-NET-002
+    category: network
+    match: { allow_private: true }
+    effect: ALLOW
+    order: 31
+    reason: 宽松模式允许私网访问（实验沙箱）
+    severity: INFO
+
+  # ------------------------------------------------------------------- git
+  - rule_id: P-GIT-001
+    category: git
+    match: { protected_branches: ["main", "master"] }
+    effect: REQUIRE_APPROVAL
+    order: 40
+    reason: 主干分支写入需审批
+    severity: WARNING
+
+  # ---------------------------------------------------------------- secret
+  - rule_id: P-SECRET-001
+    category: secret
+    match: {}
+    effect: DENY
+    order: 50
+    reason: 密钥泄露仍拒绝
+    severity: CRITICAL
+
+  # ------------------------------------------------------------------ tool
+  - rule_id: P-TOOL-001
+    category: tool
+    match: { tool_names: ["read_file", "list_dir", "search_code", "run_tests", "write_file", "edit_file", "apply_patch", "git_ops", "http_fetch"] }
+    effect: ALLOW
+    order: 70
+    reason: 常用工具放行
+    severity: INFO
+
+  - rule_id: P-TOOL-002
+    category: tool
+    match: { tool_name: "run_shell" }
+    effect: REQUIRE_APPROVAL
+    order: 71
+    reason: shell 工具需审批
+    severity: WARNING

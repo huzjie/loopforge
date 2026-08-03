@@ -1,0 +1,35 @@
+# LoopForge 运行时依赖（版本锁定由 WP1 单点维护，新增依赖必须走 ADR）
+# --- Web 框架与服务 ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+starlette==0.41.3
+python-multipart==0.0.20
+websockets==14.1
+sse-starlette==2.2.1
+
+# --- 数据校验与配置 ---
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# --- 数据库 ---
+SQLAlchemy==2.0.36
+alembic==1.14.0
+aiosqlite==0.20.0
+asyncpg==0.30.0
+greenlet==3.1.1
+
+# --- HTTP 客户端 ---
+httpx==0.28.1
+
+# --- CLI 与终端 ---
+typer==0.15.1
+rich==13.9.4
+
+# --- 可观测 ---
+structlog==24.4.0
+prometheus-client==0.21.1
+
+# --- 安全与工具 ---
+cryptography==44.0.0
+PyYAML==6.0.2
+jinja2==3.1.5

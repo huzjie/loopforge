@@ -1,0 +1,508 @@
+%% LoopForge 类图（数据模型 + 抽象接口）
+%% 源文件：docs/ARCHITECTURE.md —— 本文件为自动抽取，请勿手工编辑，改动请回到 ARCHITECTURE.md
+
+%% ===== 核心数据模型（26 张表 / ORM 实体与关系） =====
+classDiagram
+    direction LR
+
+    class Project {
+        +str id
+        +str slug
+        +str name
+        +str description
+        +dict settings
+        +datetime created_at
+        +datetime updated_at
+    }
+
+    class Repo {
+        +str id
+        +str project_id
+        +str provider
+        +str remote_url
+        +str default_branch
+        +str credentials_ref
+        +str local_path
+        +dict labels_config
+        +bool webhook_enabled
+    }
+
+    class Run {
+        +str id
+        +str project_id
+        +str repo_id
+        +str goal
+        +list~str~ constraints
+        +RunState state
+        +int loop_index
+        +int milestone_index
+        +int max_loops
+        +dict config_snapshot
+        +str budget_id
+        +str policy_id
+        +int recovery_count
+        +datetime started_at
+        +datetime finished_at
+        +transition(to, reason) void
+    }
+
+    class Task {
+        +str id
+        +str run_id
+        +str task_key
+        +str title
+        +str body
+        +TaskState state
+        +int priority
+        +list~str~ depends_on
+        +list~str~ touch_paths
+        +int version
+        +int attempt_count
+        +int reclaim_count
+        +int max_attempts
+        +str current_lease_id
+        +int fence_token
+        +int external_issue_number
+        +str branch_name
+        +str pr_url
+    }
+
+    class Lease {
+        +str id
+        +str task_id
+        +str worker_id
+        +int fence_token
+        +LeaseState state
+        +int ttl_seconds
+        +datetime acquired_at
+        +datetime expires_at
+        +datetime last_heartbeat_at
+        +int heartbeat_count
+        +int extend_count
+        +str expiry_reason
+    }
+
+    class Step {
+        +str id
+        +str run_id
+        +str task_id
+        +int loop_index
+        +LoopPhase phase
+        +str role
+        +StepState state
+        +str idempotency_key
+        +SideEffectClass side_effect_class
+        +dict intent_payload
+        +dict result_payload
+        +str external_ref
+        +int attempt
+        +datetime intent_at
+        +datetime confirmed_at
+    }
+
+    class Checkpoint {
+        +str id
+        +str run_id
+        +str task_id
+        +int loop_index
+        +str kind
+        +dict snapshot
+        +str last_step_id
+        +str content_hash
+    }
+
+    class IdempotencyRecord {
+        +str key
+        +str scope
+        +str step_id
+        +str external_ref
+        +dict response_snapshot
+        +datetime created_at
+    }
+
+    class Event {
+        +int seq
+        +str id
+        +str run_id
+        +str task_id
+        +str step_id
+        +EventType type
+        +Severity severity
+        +dict payload
+        +str trace_id
+        +str prev_hash
+        +str hash
+        +datetime created_at
+    }
+
+    class LlmCall {
+        +str id
+        +str step_id
+        +str provider
+        +str model
+        +str role
+        +dict request
+        +dict response
+        +int prompt_tokens
+        +int completion_tokens
+        +Decimal cost_usd
+        +int latency_ms
+        +int attempt
+        +str failover_from
+        +str prompt_version
+    }
+
+    class ToolCall {
+        +str id
+        +str step_id
+        +str tool_name
+        +dict args
+        +dict result
+        +int exit_code
+        +int duration_ms
+        +PolicyDecision policy_decision
+        +bool truncated
+    }
+
+    class Artifact {
+        +str id
+        +str run_id
+        +str task_id
+        +str kind
+        +str storage_uri
+        +str sha256
+        +int size_bytes
+        +str mime_type
+        +dict meta
+    }
+
+    class MemoryItem {
+        +str id
+        +str run_id
+        +str task_id
+        +MemoryLayer layer
+        +str content
+        +int tokens
+        +float salience
+        +bool compressed_into
+        +bytes embedding
+        +dict meta
+    }
+
+    class MilestoneSummary {
+        +str id
+        +str run_id
+        +int level
+        +int covers_from_seq
+        +int covers_to_seq
+        +str content
+        +int tokens
+        +list~str~ source_item_ids
+    }
+
+    class PinnedConstraint {
+        +str id
+        +str run_id
+        +str text
+        +int priority
+        +str origin
+        +str origin_step_id
+        +int hit_count
+        +bool active
+    }
+
+    class MemoryLineage {
+        +str id
+        +str summary_id
+        +str source_item_id
+        +float info_loss_score
+    }
+
+    class Budget {
+        +str id
+        +BudgetScope scope
+        +str scope_ref
+        +Decimal limit_usd
+        +str window
+        +Decimal warn_at
+        +Decimal throttle_at
+        +Decimal halt_at
+        +Decimal consumed_usd
+        +datetime window_start
+    }
+
+    class CostRecord {
+        +str id
+        +str run_id
+        +str task_id
+        +str pr_ref
+        +str provider
+        +str model
+        +int prompt_tokens
+        +int completion_tokens
+        +Decimal cost_usd
+        +datetime occurred_at
+    }
+
+    class Policy {
+        +str id
+        +str name
+        +int version
+        +bool active
+        +str yaml_source
+        +dict compiled
+        +datetime activated_at
+    }
+
+    class PolicyRule {
+        +str id
+        +str policy_id
+        +str rule_id
+        +str category
+        +dict match
+        +PolicyDecision effect
+        +int order
+        +str reason
+    }
+
+    class Approval {
+        +str id
+        +str run_id
+        +str step_id
+        +str action_kind
+        +dict action_payload
+        +str risk_note
+        +str state
+        +str decided_by
+        +str decision_reason
+        +datetime expires_at
+        +str timeout_action
+    }
+
+    class ProviderConfig {
+        +str id
+        +str name
+        +str kind
+        +str base_url
+        +str api_key_enc
+        +str default_model
+        +dict options
+        +bool enabled
+        +int priority
+    }
+
+    class AgentRole {
+        +str id
+        +RoleName name
+        +str provider_config_id
+        +str model
+        +float temperature
+        +int max_tokens
+        +list~str~ allowed_tools
+        +str prompt_version
+    }
+
+    class Worker {
+        +str id
+        +str hostname
+        +int pid
+        +list~str~ capabilities
+        +str state
+        +str current_task_id
+        +bool drain
+        +datetime last_heartbeat_at
+    }
+
+    class EvolutionItem {
+        +str id
+        +str source
+        +dict raw
+        +dict normalized
+        +str cluster_id
+        +float score
+        +str state
+        +str promoted_task_id
+    }
+
+    class AuditLog {
+        +str id
+        +str actor
+        +str action
+        +str resource_type
+        +str resource_id
+        +dict before
+        +dict after
+        +str trace_id
+    }
+
+    class ApiKey {
+        +str id
+        +str prefix
+        +str hashed_secret
+        +list~str~ scopes
+        +str user_id
+        +datetime expires_at
+    }
+
+    class User {
+        +str id
+        +str username
+        +str role
+        +str hashed_password
+        +bool active
+    }
+
+    Project "1" --> "*" Repo : owns
+    Project "1" --> "*" Run : hosts
+    Repo "1" --> "*" Run : targets
+    Run "1" --> "*" Task : decomposes_into
+    Run "1" --> "*" Checkpoint : snapshots
+    Run "1" --> "*" MilestoneSummary : compresses_to
+    Run "1" --> "*" PinnedConstraint : constrained_by
+    Run "1" --> "1" Budget : limited_by
+    Run "1" --> "1" Policy : governed_by
+    Task "1" --> "*" Lease : leased_by
+    Task "1" --> "*" Step : executes
+    Task "*" --> "*" Task : depends_on
+    Step "1" --> "*" LlmCall : invokes
+    Step "1" --> "*" ToolCall : invokes
+    Step "1" --> "0..1" IdempotencyRecord : guarded_by
+    Step "1" --> "*" Artifact : produces
+    Step "1" --> "*" Event : emits
+    Step "1" --> "0..1" Approval : may_require
+    Run "1" --> "*" MemoryItem : accumulates
+    MemoryItem "*" --> "1" MilestoneSummary : folded_into
+    MemoryLineage "*" --> "1" MilestoneSummary : traces
+    MemoryLineage "*" --> "1" MemoryItem : traces
+    Budget "1" --> "*" CostRecord : accounts
+    LlmCall "1" --> "1" CostRecord : bills
+    Policy "1" --> "*" PolicyRule : contains
+    PolicyRule "1" --> "*" Approval : triggers
+    ProviderConfig "1" --> "*" AgentRole : binds
+    AgentRole "1" --> "*" LlmCall : performs
+    Worker "1" --> "*" Lease : holds
+    EvolutionItem "0..1" --> "1" Task : promoted_to
+    User "1" --> "*" ApiKey : owns
+
+%% ===== 核心抽象接口（BaseProvider / BaseExecutor / BaseTool / BaseRetriever / BaseRole 等） =====
+classDiagram
+    direction TB
+
+    class BaseProvider {
+        <<abstract>>
+        +str name
+        +ProviderCapabilities capabilities
+        +chat(req ChatRequest) ChatResult
+        +chat_stream(req ChatRequest) AsyncIterator~StreamChunk~
+        +count_tokens(messages, model) int
+        +health_check() ProviderHealth
+        +close() None
+    }
+    class MockProvider
+    class OpenAiCompatProvider
+    class DashScopeProvider
+    class AnthropicProvider
+    class DeepSeekProvider
+    class OllamaProvider
+    BaseProvider <|-- MockProvider
+    BaseProvider <|-- OpenAiCompatProvider
+    BaseProvider <|-- DashScopeProvider
+    BaseProvider <|-- AnthropicProvider
+    BaseProvider <|-- DeepSeekProvider
+    BaseProvider <|-- OllamaProvider
+
+    class BaseExecutor {
+        <<abstract>>
+        +str kind
+        +prepare(spec WorkspaceSpec) WorkspaceHandle
+        +run(cmd CommandSpec) CommandResult
+        +write_file(path, content) FileStat
+        +read_file(path, max_bytes) FileContent
+        +list_dir(path, depth) DirListing
+        +cleanup(handle) None
+        +healthcheck() ExecutorHealth
+    }
+    class LocalSubprocessExecutor
+    class DockerExecutor
+    BaseExecutor <|-- LocalSubprocessExecutor
+    BaseExecutor <|-- DockerExecutor
+
+    class BaseTool {
+        <<abstract>>
+        +str name
+        +str description
+        +Type~BaseModel~ args_schema
+        +SideEffectClass side_effect_class
+        +execute(ctx, args) ToolResult
+        +probe(ctx, intent) ProbeResult
+        +dry_run(ctx, args) ToolPreview
+    }
+
+    class BaseRetriever {
+        <<abstract>>
+        +str name
+        +index(docs) IndexStats
+        +search(query, top_k, filters) list~RetrievedDoc~
+        +delete(doc_ids) int
+        +stats() IndexStats
+    }
+    class Bm25Retriever
+    class EmbeddingRetriever
+    class HybridRetriever
+    BaseRetriever <|-- Bm25Retriever
+    BaseRetriever <|-- EmbeddingRetriever
+    BaseRetriever <|-- HybridRetriever
+
+    class BaseRole {
+        <<abstract>>
+        +RoleName name
+        +list~str~ allowed_tools
+        +build_messages(ctx ContextPack) list~Message~
+        +parse_output(result ChatResult) RoleOutput
+        +act(ctx RoleContext) RoleOutput
+    }
+    class PlannerRole
+    class CoderRole
+    class ReviewerRole
+    class TesterRole
+    class SummarizerRole
+    BaseRole <|-- PlannerRole
+    BaseRole <|-- CoderRole
+    BaseRole <|-- ReviewerRole
+    BaseRole <|-- TesterRole
+    BaseRole <|-- SummarizerRole
+
+    class BaseVcsProvider {
+        <<abstract>>
+        +clone(repo, dest) WorkspaceHandle
+        +create_branch(name, base) BranchRef
+        +commit(msg, paths) CommitRef
+        +push(branch, force) PushResult
+        +create_pr(spec) PullRequestRef
+        +find_pr_by_key(key) PullRequestRef
+        +list_issues(filter) list~IssueRef~
+        +sync_issue(task) IssueRef
+    }
+    class GitHubProvider
+    class LocalSandboxProvider
+    BaseVcsProvider <|-- GitHubProvider
+    BaseVcsProvider <|-- LocalSandboxProvider
+
+    class BaseMemoryLayer {
+        <<abstract>>
+        +MemoryLayer layer
+        +append(item) None
+        +recall(query, budget) list~MemoryItem~
+        +compact(strategy) CompactionResult
+        +token_size() int
+    }
+
+    class BaseAlertChannel {
+        <<abstract>>
+        +send(alert Alert) DeliveryResult
+    }
+
+    class BaseEvolutionSource {
+        <<abstract>>
+        +collect(since) list~RawItem~
+    }

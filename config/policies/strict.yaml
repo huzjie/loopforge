@@ -1,0 +1,89 @@
+# ============================================================================
+# LoopForge 严格安全策略 —— 只读白名单模式
+#
+# 适用：高价值仓库 / 对外发布前 / 无人值守长程运行。
+# 与 default 的区别：所有 shell 一律拒绝（不留给审批），网络默认拒绝，
+# 只读工具白名单放行，其余动作默认拒绝（引擎兜底）。
+# ============================================================================
+name: strict
+version: 1
+description: 严格安全基线 —— 只读白名单，shell/网络默认拒绝
+
+rules:
+  # ------------------------------------------------------------------ shell
+  - rule_id: S-SHELL-001
+    category: shell
+    match: {}
+    effect: DENY
+    order: 10
+    reason: 严格模式禁止一切 shell 命令
+    severity: CRITICAL
+
+  # ------------------------------------------------------------------ path
+  - rule_id: S-PATH-001
+    category: path
+    match: { deny: ["/etc/**", "/dev/**", "/proc/**", "/boot/**", "/usr/**", "/var/**"] }
+    effect: DENY
+    order: 20
+    reason: 严格模式禁止访问系统目录
+    severity: CRITICAL
+
+  - rule_id: S-PATH-002
+    category: path
+    match: { allow: ["**/workspace/**", "**/src/**", "**/tests/**", "**/data/**"] }
+    effect: ALLOW
+    order: 21
+    reason: 只允许工作区/源码/测试/数据目录
+    severity: INFO
+
+  # ---------------------------------------------------------------- network
+  - rule_id: S-NET-001
+    category: network
+    match:
+      allow_domains:
+        - pypi.org
+        - files.pythonhosted.org
+        - github.com
+        - api.github.com
+        - raw.githubusercontent.com
+      allow_private: false
+    effect: DENY
+    order: 30
+    reason: 网络仅白名单域，且禁止私网地址
+    severity: WARNING
+
+  # ------------------------------------------------------------------- git
+  - rule_id: S-GIT-001
+    category: git
+    match: { protected_branches: ["main", "master", "release/*", "develop"] }
+    effect: DENY
+    order: 40
+    reason: 严格模式禁止写入受保护分支
+    severity: CRITICAL
+
+  # ---------------------------------------------------------------- secret
+  - rule_id: S-SECRET-001
+    category: secret
+    match: {}
+    effect: DENY
+    order: 50
+    reason: 严格模式禁止任何密钥泄露
+    severity: CRITICAL
+
+  # ------------------------------------------------------------------ tool
+  - rule_id: S-TOOL-001
+    category: tool
+    match: { tool_names: ["read_file", "list_dir", "search_code", "run_tests"] }
+    effect: ALLOW
+    order: 70
+    reason: 只读工具白名单放行
+    severity: INFO
+
+  # ------------------------------------------------------------ dependency
+  - rule_id: S-DEP-001
+    category: dependency
+    match: {}
+    effect: DENY
+    order: 80
+    reason: 严格模式禁止引入新依赖（需人工审批）
+    severity: WARNING

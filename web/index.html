@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="LoopForge —— 长程自主编程智能体编排与治理平台" />
+    <title>LoopForge</title>
+    <script>
+      // 防闪烁：在 React 挂载前根据 localStorage 决定暗色主题。
+      (function () {
+        try {
+          var stored = localStorage.getItem('loopforge.theme');
+          if (stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {
+          /* localStorage 不可用时忽略，走默认亮色 */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
