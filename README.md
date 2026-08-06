@@ -5,6 +5,7 @@
 **开源 · 自托管 · 模型无关的长程自主编程智能体编排与治理平台**
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![CI](https://github.com/huzjie/loopforge/actions/workflows/ci.yml/badge.svg)](https://github.com/huzjie/loopforge/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org)
 [![Stars](https://img.shields.io/github/stars/huzjie/loopforge?style=social)](https://github.com/huzjie/loopforge)
 [![Last Commit](https://img.shields.io/github/last-commit/huzjie/loopforge)](https://github.com/huzjie/loopforge/commits/main)
