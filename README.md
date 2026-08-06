@@ -132,6 +132,43 @@ loopforge run \
   --executor docker
 ```
 
+### Provider 配置示例
+
+把 `providers.default` 指向你要用的 Provider，并按需配置密钥和模型。下面这些
+YAML 块对应 Web / API / CLI 写入的 `provider_configs` 条目：
+
+```yaml
+providers:
+  default: openai
+  entries:
+    - name: openai
+      kind: openai
+      base_url: https://api.openai.com/v1
+      api_key: ${OPENAI_API_KEY}
+      default_model: gpt-4o-mini
+      models: [gpt-4o-mini, gpt-4o]
+    - name: deepseek
+      kind: deepseek
+      base_url: https://api.deepseek.com
+      api_key: ${DEEPSEEK_API_KEY}
+      default_model: deepseek-chat
+      models: [deepseek-chat, deepseek-reasoner]
+    - name: kimi
+      kind: openai_compatible
+      base_url: https://api.moonshot.cn/v1
+      api_key: ${KIMI_API_KEY}
+      default_model: kimi-k2-0905-preview
+      models: [kimi-k2-0905-preview]
+    - name: ollama
+      kind: ollama
+      base_url: http://localhost:11434
+      default_model: qwen3.8-27b
+      models: [qwen3.8-27b]
+```
+
+本地 Ollama 不需要 API Key；其余 Provider 使用对应环境变量提供密钥。配置好
+`default` 后，CLI 的 `--provider` 参数可以省略。
+
 详细部署（Docker Compose / K8s-Helm）见 [`docs/guides/`](docs/guides/)。
 
 ---
