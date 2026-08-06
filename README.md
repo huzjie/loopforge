@@ -181,3 +181,8 @@ loopforge run \
 **⭐ 如果这个项目对你有价值，请给它一个 Star —— 帮助更多团队把"自主编程"真正用在生产里。**
 
 </div>
+---
+
+## ⭐ Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=huzjie/loopforge&type=Date)](https://star-history.com/#huzjie/loopforge&Date)
