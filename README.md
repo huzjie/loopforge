@@ -10,6 +10,7 @@
 [![Last Commit](https://img.shields.io/github/last-commit/huzjie/loopforge)](https://github.com/huzjie/loopforge/commits/main)
 [![Issues](https://img.shields.io/github/issues/huzjie/loopforge)](https://github.com/huzjie/loopforge/issues)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/huzjie/loopforge/pulls)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/huzjie/loopforge/badge)](https://scorecard.dev/viewer/?uri=github.com/huzjie/loopforge)
 
 *让任意团队用任意 LLM，在数小时到数天的时间尺度上，自主完成真实软件工程任务——并且**可恢复、可治理、可审计、可观测**。*
 
