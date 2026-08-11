@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75.0", "wheel"]
+requires = ["setuptools>=84.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -22,33 +22,33 @@ classifiers = [
 ]
 
 dependencies = [
-    "fastapi==0.115.6",
-    "uvicorn[standard]==0.34.0",
-    "starlette==0.41.3",
-    "python-multipart==0.0.20",
-    "websockets==14.1",
-    "sse-starlette==2.2.1",
-    "pydantic==2.10.4",
-    "pydantic-settings==2.7.0",
-    "SQLAlchemy==2.0.36",
-    "alembic==1.14.0",
-    "aiosqlite==0.20.0",
-    "greenlet==3.1.1",
+    "fastapi==0.141.1",
+    "uvicorn[standard]==0.52.1",
+    "starlette==0.52.1",
+    "python-multipart==0.0.32",
+    "websockets==14.2",
+    "sse-starlette==2.4.1",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.15.0",
+    "SQLAlchemy==2.0.51",
+    "alembic==1.19.1",
+    "aiosqlite==0.22.1",
+    "greenlet==3.5.4",
     "httpx==0.28.1",
-    "typer==0.15.1",
+    "typer==0.27.1",
     "rich==13.9.4",
     "structlog==24.4.0",
-    "prometheus-client==0.21.1",
-    "cryptography==44.0.0",
-    "PyYAML==6.0.2",
-    "jinja2==3.1.5",
+    "prometheus-client==0.26.0",
+    "cryptography==44.0.3",
+    "PyYAML==6.0.3",
+    "jinja2==3.1.6",
 ]
 
 [project.optional-dependencies]
-docker = ["docker==7.1.0"]
-tokens = ["tiktoken==0.8.0"]
-vector = ["numpy==2.2.1"]
-postgres = ["asyncpg==0.30.0"]
+docker = ["docker==7.2.0"]
+tokens = ["tiktoken==0.13.0"]
+vector = ["numpy==2.4.6"]
+postgres = ["asyncpg==0.31.0"]
 all = ["loopforge[docker,tokens,vector,postgres]"]
 
 [project.scripts]
