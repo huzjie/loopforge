@@ -15,4 +15,4 @@ freezegun==1.5.1
 respx==0.22.0
 coverage[toml]==7.6.10
 pre-commit==4.0.1
-mkdocs-material==9.5.49
+mkdocs-material==9.7.7
