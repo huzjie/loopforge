@@ -1,0 +1,9 @@
+# minimal: fast, few loops, mHC on
+loop:
+  loops: 4
+  dim: 8
+  normalize: true
+mhc:
+  enabled: true
+model:
+  skill: 0.5

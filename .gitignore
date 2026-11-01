@@ -1,74 +1,13 @@
-# ---- Python ----------------------------------------------------------------
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-build/
-dist/
 *.egg-info/
-.eggs/
-pip-wheel-metadata/
-
-# ---- 虚拟环境 --------------------------------------------------------------
+dist/
+build/
 .venv/
 venv/
-env/
-ENV/
-
-# ---- 测试与类型检查缓存 ----------------------------------------------------
 .pytest_cache/
-.pytest-tmp/
 .mypy_cache/
-.ruff_cache/
-.tox/
-.nox/
-.coverage
-.coverage.*
-coverage.xml
-htmlcov/
-junit*.xml
-
-# ---- 运行期数据（数据库、工作区、产物、日志）------------------------------
-data/
-!data/.gitkeep
-*.db
-*.db-shm
-*.db-wal
-*.sqlite
-*.sqlite3
-logs/
+.push_cache.json
 *.log
-
-# ---- 密钥与本地配置 --------------------------------------------------------
 .env
-.env.*
-!.env.example
-loopforge.yaml
-config/local.yaml
-*.pem
-*.key
-
-# ---- 前端 ------------------------------------------------------------------
-node_modules/
-web/dist/
-web/.vite/
-web/coverage/
-*.tsbuildinfo
-
-# ---- IDE / 编辑器 ----------------------------------------------------------
-.idea/
-.vscode/
-!.vscode/extensions.json
-*.swp
-*.swo
-*~
-
-# ---- 操作系统 --------------------------------------------------------------
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# ---- 文档构建 --------------------------------------------------------------
-site/
-docs/_build/
+reports/

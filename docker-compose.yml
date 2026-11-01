@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  loopforge:
+    build: .
+    container_name: loopforge
+    ports:
+      - "8431:8431"
+    environment:
+      PYTHONUNBUFFERED: "1"
+    command: ["python", "-m", "loopforge.cli", "serve", "--host", "0.0.0.0", "--port", "8431"]

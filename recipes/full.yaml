@@ -1,0 +1,20 @@
+# full: deep loop + mHC + expert model
+loop:
+  loops: 32
+  dim: 8
+  normalize: true
+mhc:
+  enabled: true
+  n_streams: 3
+  epsilon: 0.001
+  alpha: [0.5, 0.3, 0.2]
+stability:
+  norm_lo: 0.5
+  norm_hi: 2.0
+model:
+  skill: 1.0
+engine:
+  min_confidence: 0.5
+  convergence_threshold: 0.9
+report:
+  format: markdown

@@ -1,0 +1,9 @@
+# naive_contrast: turn OFF mhc + normalization to observe drift
+loop:
+  loops: 32
+  dim: 8
+  normalize: false
+mhc:
+  enabled: false
+model:
+  skill: 0.5
